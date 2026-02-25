@@ -1,9 +1,12 @@
-from google import genai
+import os
+from google.adk.agents import Agent
+from google.adk.models.google_llm import Gemini
+from google.adk.runners import InMemoryRunner
+from google.adk.tools import google_search
 from google.genai import types
-from steam.webapi import WebAPI
-from steam.steamid import SteamID
+from dotenv import load_dotenv
 
-api = WebAPI(key="") # will get the steam key later on
+load_dotenv()
 
-accountLink = input("Enter your Steam profile link: ")
-accountId = int(accountLink)
+api_key = os.getenv("API_KEY")
+
