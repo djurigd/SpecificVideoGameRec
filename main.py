@@ -1,31 +1,70 @@
 import os
 import asyncio
 from dotenv import load_dotenv
+from enum import Enum
+from pydantic import BaseModel
+import json
+import keyboard
 
 from google import genai
 from google.genai import types
-from google.adk.agents import LlmAgent
+from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.runners import InMemoryRunner
 from google.adk.tools import google_search
 
+
+class GameEntry(BaseModel):
+    title: str
+    description: str
+
+class GamesList(BaseModel):
+    games: list[GameEntry]
+
+# Getting the API key for the agent
+load_dotenv()
+google_api_key = os.getenv("GOOGLE_API_KEY")
+
+# Creating a GenAI client with specifications
+# Agent will use the google search to find the recommended games
+# Structure each of the games with game title and then game description in separate lines
+# Each entry will be separated by white lines
+# Usually formatting and introductory statement like "Here are some games ...", so it is not included to make it easier to format for the output
+client = genai.Client(api_key=google_api_key)
+
+# Agent to search for the recommended games
+game_search_agent = LlmAgent(
+    name="game_search_agent",
+    description="Searches for recommended games based on user input",
+    model=Gemini(model="gemini-2.5-flash"),
+    instruction="You are a game recommender assistant. " \
+        "You will use Google search to search up games that relates to the user's prompt." \
+        "Return list of games with their title and description",
+    tools=[google_search],
+    output_key="search_results"
+)
+
+# Agent to format the results into list of game entries
+format_agent = LlmAgent(
+    name="format_agent",
+    description="A formatting agent to format result",
+    model=Gemini(model="gemini-2.5-flash"),
+    instruction="You will receive a list of games. Structure them into a JSON list with the title and description for each game.",
+    output_schema=GamesList
+)
+
+# A sequential agent that runs the two agents in an order. This is to make the formatting more easier to work with.
+game_rec_agent = SequentialAgent(
+    name="game_rec_agent",
+    sub_agents=[game_search_agent, format_agent]
+)
+
+runner = InMemoryRunner(agent=game_rec_agent)
+
+
+
 async def main():
     # Getting the Google API Key
-    load_dotenv()
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-
-    # Creating a GenAI client with specifications
-    client = genai.Client(api_key=google_api_key)
-    game_rec_agent = LlmAgent(
-        name="game_recommender_agent",
-        description="Recommends games to users based on specific prompts",
-        model=Gemini(model="gemini-2.5-flash-lite"),
-        instruction="You are a game recommender assistant. " \
-            "You will use Google search to search up games that relates to the user's prompt." \
-            "Format each of the games with the game title, game rating, and description, all in different lines.",
-        tools=[google_search]
-    )
-    runner = InMemoryRunner(agent=game_rec_agent)
 
     # Debug version of the AI agent's response
     prompt = input("Input Prompt: ")
@@ -37,15 +76,41 @@ async def main():
     # to the ADK documentation.
     for event in response:
         # Find the final response from the agent
-        if event.is_final_response():
+        if (event.is_final_response()):
             # Extract the conversational message from the event.
             response_text = event.content.parts[0].text
 
-    # Print out the extracted AI response
-    print("\n\n\n")
-    print("AI Response in Text Form: \n")
-    print(response_text)
+    game_data = json.loads(response_text)
+    game_list = game_data["games"]
 
+    for entry in game_list:
+        print(entry["title"])
+        print(entry["description"])
+        print()
+
+    num_games = len(game_list)
+
+    LINE_UP = '\033[1A'
+    LINE_CLEAR = '\x1b[2K'
+
+    cur_game = 0
+
+    while(True):
+        # Clearing the lines for the terminal output and then outputting the current game
+        print(LINE_UP, end=LINE_CLEAR)
+        print(game_list[cur_game]["title"])
+        print(game_list[cur_game]["description"])
+
+        if (cur_game > 0):
+            print("<    ")
+
+        print("[Q]uit    [P]rompt")
+        
+        if (cur_game < num_games - 1):
+            print("    >")
+
+        print()
+        
 
 if __name__ == '__main__':
     asyncio.run(main())
