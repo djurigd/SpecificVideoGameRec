@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from enum import Enum
 from pydantic import BaseModel
 import json
-import keyboard
 
 from google import genai
 from google.genai import types
@@ -61,56 +60,87 @@ game_rec_agent = SequentialAgent(
 
 runner = InMemoryRunner(agent=game_rec_agent)
 
-
-
 async def main():
-    # Getting the Google API Key
-
-    # Debug version of the AI agent's response
-    prompt = input("Input Prompt: ")
-    response = await runner.run_debug(prompt)
-
-    response_text = ""
-
-    # Getting the string version of the response. The response itself is stored as a list[Event] according
-    # to the ADK documentation.
-    for event in response:
-        # Find the final response from the agent
-        if (event.is_final_response()):
-            # Extract the conversational message from the event.
-            response_text = event.content.parts[0].text
-
-    game_data = json.loads(response_text)
-    game_list = game_data["games"]
-
-    for entry in game_list:
-        print(entry["title"])
-        print(entry["description"])
-        print()
-
-    num_games = len(game_list)
-
-    LINE_UP = '\033[1A'
-    LINE_CLEAR = '\x1b[2K'
-
+    ask_prompt = True
+    quit_agent = False
     cur_game = 0
+    num_games = 0
+
+    # Clearing the lines for the terminal output and then outputting the current game
+    os.system('cls' if os.name == 'nt' else 'clear')
 
     while(True):
+        if (ask_prompt is True):
+            # Debug version of the AI agent's response
+            prompt = input("Input Prompt: ")
+            response = await runner.run_debug(prompt)
+
+            response_text = ""
+
+            # Getting the string version of the response. The response itself is stored as a list[Event] according
+            # to the ADK documentation.
+            for event in response:
+                # Find the final response from the agent
+                if (event.is_final_response()):
+                    # Extract the conversational message from the event.
+                    response_text = event.content.parts[0].text
+
+            # Format the game into the list
+            game_data = json.loads(response_text)
+            game_list = game_data["games"]
+
+            # Get the number of recommended games
+            num_games = len(game_list)
+            ask_prompt = False
+
         # Clearing the lines for the terminal output and then outputting the current game
-        print(LINE_UP, end=LINE_CLEAR)
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+        # Print the current game
         print(game_list[cur_game]["title"])
         print(game_list[cur_game]["description"])
+        print()
 
+        # Formatting the terminal
+        # If we're after the first recommended game, then display the left option
         if (cur_game > 0):
-            print("<    ")
+            print("[L]eft")
 
-        print("[Q]uit    [P]rompt")
+        # Display the other options
+        print("[Q]uit\n[P]rompt")
         
+        # If we're before the last recommended game, then display the right option
         if (cur_game < num_games - 1):
-            print("    >")
+            print("[R]ight")
 
         print()
+
+        # Get user input for option
+        option = input()
+
+        # Execute option
+        match option:
+            case "L":
+                # If we're not at the first game, then go left
+                if (cur_game > 0):
+                    cur_game -= 1
+            case "Q":
+                # Quit the agent by breaking out of the outer for loop
+                quit_agent = True
+            case "P":
+                # User wants to do another prompt
+                ask_prompt = True
+            case "R":
+                # If we're not at the last game, then go right
+                if (cur_game < num_games - 1):
+                    cur_game += 1
+            case _:
+                print("Please type the correct input")
         
+        # Break out of the loop if user quits
+        if (quit_agent is True):
+            print("Thank you for using the game recommender!")
+            break
 
 if __name__ == '__main__':
     asyncio.run(main())
